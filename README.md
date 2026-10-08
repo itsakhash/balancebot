@@ -6,7 +6,7 @@ A self-balancing two-wheeled robot, built on an STM32 NUCLEO-F446RE and an MPU-6
 
 ## Simulation: the balancing problem first
 
-Before buying motors, I modeled the robot as an inverted pendulum in Python and tuned a PID controller on the model. The goal was to learn what each gain does and what limits them.
+Before buying motors, I modeled the robot as an inverted pendulum in Python and designed the controller on the model. The goal was to learn what each gain does and what limits them.
 
 Model: the wheels accelerate the base by `a`, and the body (center of mass `L = 0.10 m` above the axle) tilts by `theta`:
 
@@ -21,10 +21,11 @@ The simulation steps at 200 Hz (5 ms), the loop rate planned for the Nucleo. Whe
 | `gain_sweep.py` | Changes one gain at a time to show what each term does. |
 | `noisy_sweep.py` | Adds sensor noise, a 15 ms control delay and 30 ms motor lag. |
 | `complementary_filter.py` | Estimates tilt from a noisy accelerometer and a drifting gyro. |
+| `lqr_balance.py` | Full state feedback (LQR) that also removes the PID loop's drift. |
 
-Run any of them with `python3 <script>.py` (needs Python 3 and matplotlib). Each saves a PNG next to the script.
+Run any of them with `python3 <script>.py` (needs Python 3, numpy and matplotlib). Each saves a PNG next to the script.
 
-## Control results
+## PID control results
 
 Ideal sensors and motors (`gain_sweep.py`):
 
@@ -55,7 +56,33 @@ What I take from this:
 - `kp` must exceed gravity (9.81) or the robot cannot catch itself.
 - `kd` damps the motion, but it also amplifies sensor noise.
 - The gain that looks best with ideal sensors (`kp = 200`) falls within a second once a 15 ms delay is added. Delay and noise, not the physics, limit how aggressive the gains can be.
-- The controller stays upright but the robot drifts: speed ends at about 0.14 m/s. Fixing that needs a speed or position loop on top of the tilt loop.
+- The PID loop stays upright but the robot drifts, because it only sees tilt: speed ends at about 0.14 m/s. The state-feedback controller below fixes that.
+
+## State feedback (LQR)
+
+`lqr_balance.py` linearizes the model about upright, with state `[position, speed, tilt, tilt rate]` and the wheel acceleration as the input, then solves the LQR problem for the feedback gains with a numpy-only Riccati solver (cross-checked against SciPy while developing it). With `Q = diag(10, 1, 100, 1)` and `R = 1`:
+
+    u = -K z,   K = [-3.16, -3.72, -29.71, -3.00]
+
+The open-loop poles are 0, 0, and +/-9.9 (the +9.9 is the unstable one, `sqrt(g/L)`). The closed-loop poles are -14.0, -10.0 and -1.11 +/- 0.99j, all stable.
+
+Ideal sensors and motors, 8 s run with a 3 degree start and a shove at 2 s:
+
+| Controller | Max tilt after shove | Final speed | Final position |
+|---|---|---|---|
+| PID | 1.40 deg | 0.139 m/s | 0.916 m |
+| LQR | 0.85 deg | 0.000 m/s | -0.000 m |
+
+With noise on tilt and tilt rate, a 15 ms delay and 30 ms motor lag, over 20 noise seeds:
+
+| Controller | Stayed up | Mean final speed | Mean final position |
+|---|---|---|---|
+| PID | 20/20 | 0.142 m/s | 0.946 m |
+| LQR | 20/20 | 0.006 m/s | 0.003 m |
+
+![lqr vs pid](lqr_balance.png)
+
+LQR trades speed for calm: tilt recovers over a couple of seconds instead of about half a second, because it also works to bring the position back. The `Q` and `R` weights are one reasonable choice out of four I tried, not an optimum.
 
 ## Tilt estimation results
 
@@ -92,7 +119,8 @@ The controller needs a tilt angle, and the IMU gives two imperfect measurements 
 ## Limitations
 
 - The sensor noise, the gyro drift, the 15 ms delay and the 30 ms motor lag are assumptions, not measurements. They will be replaced with real numbers from the hardware.
-- The model is a point-mass pendulum with no wheel inertia, friction or motor dynamics.
+- The model is a point-mass pendulum with no wheel inertia, friction or motor dynamics, and it takes wheel acceleration as the input. Real motors take a voltage, so the LQR gains must be re-derived from the measured chassis and motor parameters.
+- The LQR assumes position and speed are measured cleanly, which the wheel encoders should provide; only tilt and tilt rate get sensor noise in the simulation.
 - The tilt filter is evaluated offline on recorded motion; it is not yet in the control loop.
 
 ## Next
@@ -100,5 +128,5 @@ The controller needs a tilt angle, and the IMU gives two imperfect measurements 
 1. Run the firmware on the Nucleo: blink, then read and calibrate the MPU-6050.
 2. Port the complementary filter to C and compare its output with the simulation.
 3. Drive the motors and read the encoders.
-4. Build the chassis and run the real controller.
-5. Measure the real delay and noise, and compare them with this simulation.
+4. Build the chassis, measure its real parameters, and re-derive the LQR gains.
+5. Run the real controller at 200 Hz, and measure the real delay and noise against this simulation.
