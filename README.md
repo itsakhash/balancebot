@@ -151,12 +151,13 @@ This verifies the logic against real sensor data. It says nothing yet about the 
 
 ## Firmware
 
-`firmware/` is a PlatformIO project (STM32Cube HAL) for the NUCLEO-F446RE, built as three programs from one source tree:
+`firmware/` is a PlatformIO project (STM32Cube HAL) for the NUCLEO-F446RE, built as four programs from one source tree:
 
 | Environment | Program | Purpose |
 |---|---|---|
 | `nucleo_f446re` | `main.c` | Tilt estimator: reads the IMU, calibrates the gyro, prints angle and accelerometer angle at 10 lines/s. Runs on hardware. |
 | `motor_bench` | `motor_bench.c` | Bench test for the motors and encoders: counts per wheel turn by hand, then each motor forward and reverse with RPM readout. |
+| `motor_step` | `step_test.c` | Motor step response: steps each motor to five commands and records the encoder every 5 ms, then prints the speed reached, the dead time and lag time constant, a speed-versus-command line, and the numbers for the motor model. Wheels off the ground. |
 | `balance` | `balance_main.c` | The balance loop at 200 Hz. Starts in a dry-run mode where the motor driver stays in standby, so the commands can be inspected by tilting the board by hand. Runs on hardware in dry-run mode. |
 
 Build one with `pio run -e <environment>`. Wiring: MPU-6050 SCL to PB8 (D15), SDA to PB9 (D14), VCC to 3.3 V, GND to GND. The motor driver and encoder pin map is documented in `include/board_config.h`.
@@ -170,13 +171,14 @@ The logic is kept free of hardware access and tested on the PC with plain `gcc`:
 | `drive_math.c` | Command to motor pins and PWM duty, encoder wraparound deltas, speed in RPM. | `test_drive_math.c`, 23 checks |
 | `controller.c` | PID and LQR, ported from the simulation. | `test_controller.c`, 30 checks, including a replay of the pendulum simulation compared with the Python output |
 | `balance.c` | Arming (held upright and still for 1 s), a cut-off past 35 degrees, balance-point trim, speed filter, and the controller call. | `test_balance.c`, 28 checks, including the supervisor balancing the simulated pendulum |
+| `step_fit.c` | Fits dead time and lag to a motor step response, fits a line through speed versus command, and turns a wanted wheel acceleration into a motor command from the fitted model. | `test_step_fit.c`, 31 checks |
 | `drivetrain.c` | PWM on TIM1 and quadrature decoding on TIM2 and TIM3. | hardware only |
 
 Run a test from `firmware/`, for example:
 
     gcc -Wall -Wextra -Iinclude test/test_balance.c src/balance.c src/controller.c -o /tmp/test_balance -lm && /tmp/test_balance
 
-Status: all three programs build. The tilt estimator and the balance loop's dry run have run on hardware. The motor bench and the balance loop with live motors have not (they need the motors).
+Status: all four programs build. The tilt estimator and the balance loop's dry run have run on hardware. The motor bench, the motor step test and the balance loop with live motors have not (they need the motors).
 
 ## Chassis
 
@@ -195,6 +197,6 @@ OpenSCAD checks confirm that no printed part overlaps another or the stand-ins f
 ## Next
 
 1. Print the fit-test coupon, then the chassis; measure the real parts and update the model.
-2. Run `motor_bench` on the bench supply: counts per wheel turn, direction flags, and the real motor lag from a step response.
+2. Run `motor_bench` on the bench supply (counts per wheel turn, direction flags), then `motor_step` for the real motor lag and speed per command, and replace the placeholder acceleration-to-command mapping with the fitted motor model.
 3. Weigh the finished robot, find its center of mass, and rerun `design_gains.py` with the measured height.
 4. Run the balance loop live on the stand, then on the floor with the outrigger legs, and measure the real delay and noise against the simulation.
