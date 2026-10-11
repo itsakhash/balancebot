@@ -1,0 +1,8 @@
+{
+  "name": "FreeRTOS",
+  "version": "10.6.2",
+  "description": "FreeRTOS kernel V10.6.2 (tasks, queues, lists), Cortex-M4F GCC port, heap_4",
+  "keywords": "rtos",
+  "license": "MIT",
+  "build": { "flags": "-Wno-unused-parameter" }
+}
