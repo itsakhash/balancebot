@@ -16,6 +16,7 @@ Sensor model (the same chain the firmware runs): accelerometer noise and gyro no
 the speed is a low-pass filtered difference (0.2 per step), exactly like balance.c.
 Only numpy is needed.
 """
+
 import argparse
 import math
 from collections import deque
@@ -23,12 +24,12 @@ from collections import deque
 import numpy as np
 
 G = 9.81
-DT = 0.005                 # 200 Hz
-MAX_ACCEL = 5.0            # m/s^2 the wheels can add (placeholder until measured)
-CUT_RAD = math.radians(35.0)   # firmware cut-off
-ALPHA = 0.98               # complementary filter weight on the gyro
-SPEED_LP = 0.2             # balance.c BALANCE_SPEED_LP
-COUNT_M = math.pi * 0.065 / (11 * 4 * 21.3)   # metres of wheel travel per encoder count
+DT = 0.005  # 200 Hz
+MAX_ACCEL = 5.0  # m/s^2 the wheels can add (placeholder until measured)
+CUT_RAD = math.radians(35.0)  # firmware cut-off
+ALPHA = 0.98  # complementary filter weight on the gyro
+SPEED_LP = 0.2  # balance.c BALANCE_SPEED_LP
+COUNT_M = math.pi * 0.065 / (11 * 4 * 21.3)  # metres of wheel travel per encoder count
 Q = np.diag([10.0, 1.0, 100.0, 1.0])
 R = np.array([[1.0]])
 OLD_L = 0.10
@@ -37,7 +38,9 @@ OLD_K = np.array([-3.16227766, -3.71901666, -29.71225976, -2.99663144])
 
 def model(L):
     """x'' = u, theta'' = (g/L) theta - u/L with state [position, speed, tilt, tilt rate]."""
-    A = np.array([[0, 1, 0, 0], [0, 0, 0, 0], [0, 0, 0, 1], [0, 0, G / L, 0]], dtype=float)
+    A = np.array(
+        [[0, 1, 0, 0], [0, 0, 0, 0], [0, 0, 0, 1], [0, 0, G / L, 0]], dtype=float
+    )
     B = np.array([[0], [1], [0], [-1 / L]], dtype=float)
     return A, B
 
@@ -59,16 +62,29 @@ def pid_accel(est, rate):
     return 30.0 * est + 1.5 * rate
 
 
-def simulate(L, controller, noisy=True, delay_steps=3, motor_lag=0.03, accel_noise_g=0.003,
-             gyro_noise_dps=0.35, t_end=8.0, seed=1, max_accel=MAX_ACCEL):
+def simulate(
+    L,
+    controller,
+    noisy=True,
+    delay_steps=3,
+    motor_lag=0.03,
+    accel_noise_g=0.003,
+    gyro_noise_dps=0.35,
+    t_end=8.0,
+    seed=1,
+    max_accel=MAX_ACCEL,
+):
     """3 degree lean at the start, 40 deg/s shove at 2 s. controller(x, v, est, rate) -> accel.
     noisy=False feeds the controller the true state (like lqr_balance.py); noisy=True runs the
-    sensor chain described at the top. Returns (record, step it passed the 35 degree cut-off or None)."""
+    sensor chain described at the top. Returns (record, step it passed the 35 degree cut-off or None).
+    """
     rng = np.random.default_rng(seed)
     x = v = om = 0.0
     th = math.radians(3.0)
-    est = th                       # filter seeded from the accelerometer, as in tilt.c
-    resid = math.radians(rng.normal(0, gyro_noise_dps / math.sqrt(200))) if noisy else 0.0
+    est = th  # filter seeded from the accelerometer, as in tilt.c
+    resid = (
+        math.radians(rng.normal(0, gyro_noise_dps / math.sqrt(200))) if noisy else 0.0
+    )
     x_meas_prev = 0.0
     v_est = 0.0
     accel_actual = 0.0
@@ -80,7 +96,9 @@ def simulate(L, controller, noisy=True, delay_steps=3, motor_lag=0.03, accel_noi
             om += math.radians(40.0)
 
         if noisy:
-            accel_angle = th + rng.normal(0, accel_noise_g)           # atan2(-ax, az) ~ theta + noise / 1 g
+            accel_angle = th + rng.normal(
+                0, accel_noise_g
+            )  # atan2(-ax, az) ~ theta + noise / 1 g
             rate = om + math.radians(rng.normal(0, gyro_noise_dps)) + resid
             x_meas = round(x / COUNT_M) * COUNT_M
             est = ALPHA * (est + rate * DT) + (1 - ALPHA) * accel_angle
@@ -102,14 +120,19 @@ def simulate(L, controller, noisy=True, delay_steps=3, motor_lag=0.03, accel_noi
         th += om * DT
         v += accel_actual * DT
         x += v * DT
-        rec["t"].append(t); rec["x"].append(x); rec["v"].append(v); rec["tilt"].append(math.degrees(th))
+        rec["t"].append(t)
+        rec["x"].append(x)
+        rec["v"].append(v)
+        rec["tilt"].append(math.degrees(th))
         if abs(th) > CUT_RAD:
             return rec, k
     return rec, None
 
 
 def lqr_controller(K):
-    return lambda x, v, est, rate: float(-(K[0] * x + K[1] * v + K[2] * est + K[3] * rate))
+    return lambda x, v, est, rate: float(
+        -(K[0] * x + K[1] * v + K[2] * est + K[3] * rate)
+    )
 
 
 def pid_controller():
@@ -132,7 +155,9 @@ def survival(L, controller, runs=20, **kw):
 
 def header_block(K):
     names = ["position m", "speed m/s", "tilt rad", "tilt rate rad/s"]
-    lines = ["/* u = -K z with z = [position m, speed m/s, tilt rad, tilt rate rad/s] */"]
+    lines = [
+        "/* u = -K z with z = [position m, speed m/s, tilt rad, tilt rate rad/s] */"
+    ]
     for i, k in enumerate(K):
         lines.append(f"#define BALANCE_LQR_K{i} ({k:.8f}f)")
     return "\n".join(lines)
@@ -145,19 +170,43 @@ def reference_points(L, K):
     for name, ctrl in (("PID", pid_controller()), ("LQR", lqr_controller(K))):
         rec, fell = simulate(L, ctrl, noisy=False, delay_steps=0, motor_lag=0.0)
         # the ideal check in the C test feeds the true state, so use the true tilt, not the filter
-        out[name] = (fell, [(rec["t"][i], rec["tilt"][i], rec["v"][i], rec["x"][i]) for i in steps if i < len(rec["t"])])
+        out[name] = (
+            fell,
+            [
+                (rec["t"][i], rec["tilt"][i], rec["v"][i], rec["x"][i])
+                for i in steps
+                if i < len(rec["t"])
+            ],
+        )
     return out
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--L", type=float, default=0.062, help="centre of mass height above the axle, metres")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "--L",
+        type=float,
+        default=0.062,
+        help="centre of mass height above the axle, metres",
+    )
     ap.add_argument("--accel-noise-g", type=float, default=0.003)
     ap.add_argument("--gyro-noise-dps", type=float, default=0.35)
     ap.add_argument("--runs", type=int, default=20)
-    ap.add_argument("--sweep", action="store_true", help="also compare several L values")
-    ap.add_argument("--margins", action="store_true", help="latency budget and wheel-acceleration limit the controllers survive")
-    ap.add_argument("--reference", action="store_true", help="print the ideal checkpoints for test_controller.c")
+    ap.add_argument(
+        "--sweep", action="store_true", help="also compare several L values"
+    )
+    ap.add_argument(
+        "--margins",
+        action="store_true",
+        help="latency budget and wheel-acceleration limit the controllers survive",
+    )
+    ap.add_argument(
+        "--reference",
+        action="store_true",
+        help="print the ideal checkpoints for test_controller.c",
+    )
     args = ap.parse_args()
 
     kw = dict(accel_noise_g=args.accel_noise_g, gyro_noise_dps=args.gyro_noise_dps)
@@ -173,10 +222,16 @@ def main():
 
     def row(label, L, ctrl):
         ups, v, x, w = survival(L, ctrl, runs=args.runs, **kw)
-        print(f"{label:34s} {ups:3d}/{args.runs}  {w:10.2f} deg {v:11.3f} m/s {x:11.3f} m")
+        print(
+            f"{label:34s} {ups:3d}/{args.runs}  {w:10.2f} deg {v:11.3f} m/s {x:11.3f} m"
+        )
 
-    print(f"Noisy runs ({args.accel_noise_g} g accel, {args.gyro_noise_dps} deg/s gyro, 15 ms delay, 30 ms motor lag):")
-    print(f"{'controller':34s} {'stayed up':>9s}  {'mean max tilt':>13s} {'|final speed|':>13s} {'|final pos|':>13s}")
+    print(
+        f"Noisy runs ({args.accel_noise_g} g accel, {args.gyro_noise_dps} deg/s gyro, 15 ms delay, 30 ms motor lag):"
+    )
+    print(
+        f"{'controller':34s} {'stayed up':>9s}  {'mean max tilt':>13s} {'|final speed|':>13s} {'|final pos|':>13s}"
+    )
     row("PID", args.L, pid_controller())
     row("LQR, gains for this L", args.L, lqr_controller(K))
     row("LQR, old gains (L = 0.10)", args.L, lqr_controller(OLD_K))
@@ -189,31 +244,53 @@ def main():
             matched = survival(L, lqr_controller(lqr_gains(L)), runs=args.runs, **kw)[0]
             stale = survival(L, lqr_controller(OLD_K), runs=args.runs, **kw)[0]
             pid = survival(L, pid_controller(), runs=args.runs, **kw)[0]
-            print(f"{L:8.2f} {matched:9d}/{args.runs} {stale:7d}/{args.runs} {pid:3d}/{args.runs}")
+            print(
+                f"{L:8.2f} {matched:9d}/{args.runs} {stale:7d}/{args.runs} {pid:3d}/{args.runs}"
+            )
 
     if args.margins:
         n = min(args.runs, 10)
         print()
-        print(f"Latency budget: stayed up out of {n} noisy runs, LQR / PID (delay = sensing to wheel command, lag = motor response):")
+        print(
+            f"Latency budget: stayed up out of {n} noisy runs, LQR / PID (delay = sensing to wheel command, lag = motor response):"
+        )
         delays = (0, 10, 15, 20, 25, 30)
         print(f"{'motor lag':>10s} " + " ".join(f"{d:>5d} ms" for d in delays))
         for lag in (0.01, 0.03, 0.05):
             cells = []
             for d in delays:
                 steps = round(d / (DT * 1000))
-                lq = survival(args.L, lqr_controller(K), runs=n, delay_steps=steps, motor_lag=lag, **kw)[0]
-                pd = survival(args.L, pid_controller(), runs=n, delay_steps=steps, motor_lag=lag, **kw)[0]
+                lq = survival(
+                    args.L,
+                    lqr_controller(K),
+                    runs=n,
+                    delay_steps=steps,
+                    motor_lag=lag,
+                    **kw,
+                )[0]
+                pd = survival(
+                    args.L,
+                    pid_controller(),
+                    runs=n,
+                    delay_steps=steps,
+                    motor_lag=lag,
+                    **kw,
+                )[0]
                 cells.append(f"{lq:>2d}/{pd:<2d}  ")
             print(f"{lag * 1000:7.0f} ms  " + " ".join(cells))
         print()
-        print(f"Wheel acceleration limit (LQR, 15 ms delay, 30 ms lag), stayed up out of {n}:")
+        print(
+            f"Wheel acceleration limit (LQR, 15 ms delay, 30 ms lag), stayed up out of {n}:"
+        )
         for a_max in (5.0, 3.0, 2.0, 1.5, 1.0, 0.75):
             ups = survival(args.L, lqr_controller(K), runs=n, max_accel=a_max, **kw)[0]
             print(f"  {a_max:4.2f} m/s^2: {ups}/{n}")
 
     if args.reference:
         print()
-        print("Ideal-sensor checkpoints for firmware/test/test_controller.c (t, tilt deg, speed m/s, position m):")
+        print(
+            "Ideal-sensor checkpoints for firmware/test/test_controller.c (t, tilt deg, speed m/s, position m):"
+        )
         for name, (fell, pts) in reference_points(args.L, K).items():
             print(f"{name}: fell at step {fell}")
             for t, tilt, v, x in pts:

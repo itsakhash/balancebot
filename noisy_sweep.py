@@ -1,9 +1,11 @@
 """Step 8: the same balance test, but with sensor noise, a control delay, and motor lag."""
+
 import math
 import random
 from collections import deque
 
 import matplotlib
+
 matplotlib.use("Agg")  # draw to a file, no window needed
 import matplotlib.pyplot as plt
 
@@ -13,10 +15,10 @@ DT = 0.005
 T_END = 4.0
 MAX_ACCEL = 5.0
 
-ANGLE_NOISE_DEG = 0.3      # random error on the tilt estimate (std dev)
-GYRO_NOISE_DEG_S = 3.0     # random error on the angular-rate reading (std dev)
-DELAY_STEPS = 3            # command takes 3 * 5 ms = 15 ms to reach the wheels
-MOTOR_LAG_S = 0.03         # motors take about 30 ms to follow a command
+ANGLE_NOISE_DEG = 0.3  # random error on the tilt estimate (std dev)
+GYRO_NOISE_DEG_S = 3.0  # random error on the angular-rate reading (std dev)
+DELAY_STEPS = 3  # command takes 3 * 5 ms = 15 ms to reach the wheels
+MOTOR_LAG_S = 0.03  # motors take about 30 ms to follow a command
 
 
 def simulate(kp, ki, kd, seed=1):
@@ -25,7 +27,7 @@ def simulate(kp, ki, kd, seed=1):
     omega = 0.0
     integral = 0.0
     accel_actual = 0.0
-    pending = deque([0.0] * DELAY_STEPS)   # commands still "in flight"
+    pending = deque([0.0] * DELAY_STEPS)  # commands still "in flight"
     times, angles, commands = [], [], []
     t = 0.0
     while t < T_END:
@@ -60,14 +62,16 @@ def simulate(kp, ki, kd, seed=1):
 
 
 CASES = [
-    ("baseline",           30.0, 0.0, 1.5),
+    ("baseline", 30.0, 0.0, 1.5),
     ("kp very high (200)", 200.0, 0.0, 4.0),
-    ("kd too high (8)",    30.0, 0.0, 8.0),
-    ("kp 60, kd 2.5",      60.0, 0.0, 2.5),
+    ("kd too high (8)", 30.0, 0.0, 8.0),
+    ("kp 60, kd 2.5", 60.0, 0.0, 2.5),
 ]
 
 fig, axes = plt.subplots(len(CASES), 1, sharex=True, figsize=(7, 8))
-print(f"{'case':22s} {'result':16s} {'tilt jitter (rms)':>18s} {'command jitter (rms)':>22s}")
+print(
+    f"{'case':22s} {'result':16s} {'tilt jitter (rms)':>18s} {'command jitter (rms)':>22s}"
+)
 for ax, (name, kp, ki, kd) in zip(axes, CASES):
     times, angles, commands, fell = simulate(kp, ki, kd)
     if fell is not None:

@@ -2,7 +2,7 @@
 
 A self-balancing two-wheeled robot, built on an STM32 NUCLEO-F446RE and an MPU-6050 IMU.
 
-**Status:** the simulation is done, the tilt estimator runs on real hardware, and the motor, encoder and balance-loop firmware is written and host-tested. The motors and the rest of the drivetrain parts are on order, so nothing that drives a motor has run yet. A parametric chassis is designed and ready to print.
+**Status:** the simulation is done, and the tilt estimator and the balance loop (in dry-run mode, motors off) run on real hardware. The motor and encoder firmware is written and host-tested. The motors and the rest of the drivetrain parts are on order, so nothing that drives a motor has run yet. A parametric chassis is designed and ready to print.
 
 ## Simulation: the balancing problem first
 
@@ -137,6 +137,18 @@ The complementary filter is ported to C (`tilt.c`, 10 host checks) and runs at 2
 - Noise: about 0.003 g on the accelerometer and 0.3 to 0.4 deg/s on the gyro, quieter than the 0.01 g and 0.5 deg/s the early simulation assumed. The simulation above now uses the measured values.
 - The accelerometer total magnitude reads 1.17 to 1.22 g instead of 1.00 g, an offset and scale error that will be trimmed at the balance point rather than calibrated separately.
 
+## Results on hardware: the balance loop, dry run
+
+With only the Nucleo and the IMU connected (the motor driver held in standby), the `balance` program ran the full control path on the board: IMU read, complementary filter, arming, LQR and the tip-over cut-off. I held the board by hand, component side up, and watched the serial output:
+
+- **Level reading:** the board held level and still read -0.46 degrees.
+- **Arming:** it stayed `OFF` while the angle settled, then switched to `RUN` after about one second held within 3 degrees of level and still.
+- **Command matches the hand calculation:** at +5.0 degrees of lean it commanded +52 percent. The LQR tilt gain gives 29.71 x 0.0873 rad = 2.59 m/s^2, which is 52 percent of the 5 m/s^2 limit. At -1.4 degrees it commanded -14 percent, against -14.7 percent computed.
+- **Saturation:** the command reaches +/-100 percent at leans beyond about 10 degrees or when rotating the board quickly.
+- **Cut-off and re-arm:** three deliberate tips past 35 degrees dropped the state to `OFF` and counted `falls=1, 2, 3`; each time, holding the board level and still for a second brought it back to `RUN`.
+
+This verifies the logic against real sensor data. It says nothing yet about the motors, the encoders or the latency of the real loop.
+
 ## Firmware
 
 `firmware/` is a PlatformIO project (STM32Cube HAL) for the NUCLEO-F446RE, built as three programs from one source tree:
@@ -145,7 +157,7 @@ The complementary filter is ported to C (`tilt.c`, 10 host checks) and runs at 2
 |---|---|---|
 | `nucleo_f446re` | `main.c` | Tilt estimator: reads the IMU, calibrates the gyro, prints angle and accelerometer angle at 10 lines/s. Runs on hardware. |
 | `motor_bench` | `motor_bench.c` | Bench test for the motors and encoders: counts per wheel turn by hand, then each motor forward and reverse with RPM readout. |
-| `balance` | `balance_main.c` | The balance loop at 200 Hz. Starts in a dry-run mode where the motor driver stays in standby, so the commands can be inspected by tilting the board by hand. |
+| `balance` | `balance_main.c` | The balance loop at 200 Hz. Starts in a dry-run mode where the motor driver stays in standby, so the commands can be inspected by tilting the board by hand. Runs on hardware in dry-run mode. |
 
 Build one with `pio run -e <environment>`. Wiring: MPU-6050 SCL to PB8 (D15), SDA to PB9 (D14), VCC to 3.3 V, GND to GND. The motor driver and encoder pin map is documented in `include/board_config.h`.
 
@@ -164,7 +176,7 @@ Run a test from `firmware/`, for example:
 
     gcc -Wall -Wextra -Iinclude test/test_balance.c src/balance.c src/controller.c -o /tmp/test_balance -lm && /tmp/test_balance
 
-Status: all three programs build. The tilt estimator has run on hardware. The motor bench and the balance loop have not run on hardware yet (the dry run needs only the Nucleo and the IMU, the rest needs the motors).
+Status: all three programs build. The tilt estimator and the balance loop's dry run have run on hardware. The motor bench and the balance loop with live motors have not (they need the motors).
 
 ## Chassis
 
@@ -182,8 +194,7 @@ OpenSCAD checks confirm that no printed part overlaps another or the stand-ins f
 
 ## Next
 
-1. Run the balance dry run on the Nucleo and the IMU, and check the arming and cut-off behavior by hand.
-2. Print the fit-test coupon, then the chassis; measure the real parts and update the model.
-3. Run `motor_bench` on the bench supply: counts per wheel turn, direction flags, and the real motor lag from a step response.
-4. Weigh the finished robot, find its center of mass, and rerun `design_gains.py` with the measured height.
-5. Run the balance loop live on the stand, then on the floor with the outrigger legs, and measure the real delay and noise against the simulation.
+1. Print the fit-test coupon, then the chassis; measure the real parts and update the model.
+2. Run `motor_bench` on the bench supply: counts per wheel turn, direction flags, and the real motor lag from a step response.
+3. Weigh the finished robot, find its center of mass, and rerun `design_gains.py` with the measured height.
+4. Run the balance loop live on the stand, then on the floor with the outrigger legs, and measure the real delay and noise against the simulation.

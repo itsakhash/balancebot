@@ -3,10 +3,12 @@
 The PID controller only sees tilt, so the robot stays upright but rolls away. State
 feedback also sees position and speed. Only numpy is needed (no scipy).
 """
+
 import math
 from collections import deque
 
 import matplotlib
+
 matplotlib.use("Agg")  # draw to a file, no window needed
 import matplotlib.pyplot as plt
 import numpy as np
@@ -18,10 +20,7 @@ MAX_ACCEL = 5.0
 
 # Linearized model about upright, state z = [position, speed, tilt, tilt rate],
 # input u = wheel acceleration:   x'' = u,   theta'' = (g/L) * theta - u / L
-A = np.array([[0, 1, 0, 0],
-              [0, 0, 0, 0],
-              [0, 0, 0, 1],
-              [0, 0, G / L, 0]], dtype=float)
+A = np.array([[0, 1, 0, 0], [0, 0, 0, 0], [0, 0, 0, 1], [0, 0, G / L, 0]], dtype=float)
 B = np.array([[0], [1], [0], [-1 / L]], dtype=float)
 
 
@@ -32,17 +31,18 @@ def lqr(A, B, Q, R):
     """
     n = A.shape[0]
     r_inv = np.linalg.inv(R)
-    hamiltonian = np.block([[A, -B @ r_inv @ B.T],
-                            [-Q, -A.T]])
+    hamiltonian = np.block([[A, -B @ r_inv @ B.T], [-Q, -A.T]])
     values, vectors = np.linalg.eig(hamiltonian)
-    stable = vectors[:, values.real < 0]          # the n eigenvectors with negative real part
+    stable = vectors[:, values.real < 0]  # the n eigenvectors with negative real part
     x_part, y_part = stable[:n, :], stable[n:, :]
     p = np.real(y_part @ np.linalg.inv(x_part))
     return (r_inv @ B.T @ p).ravel()
 
 
-Q = np.diag([10.0, 1.0, 100.0, 1.0])   # how much we care about position, speed, tilt, tilt rate
-R = np.array([[1.0]])                  # how much we care about using wheel acceleration
+Q = np.diag(
+    [10.0, 1.0, 100.0, 1.0]
+)  # how much we care about position, speed, tilt, tilt rate
+R = np.array([[1.0]])  # how much we care about using wheel acceleration
 K = lqr(A, B, Q, R)
 
 
@@ -69,10 +69,15 @@ def simulate(controller, t_end=8.0, delay_steps=0, motor_lag=0.0, noisy=False, s
             om += math.radians(40.0)
 
         z = np.array([x, v, th, om])
-        if noisy:   # same sensor noise as step 8 on tilt and tilt rate
-            z = z + np.array([0.0, 0.0,
-                              math.radians(rng.normal(0, 0.3)),
-                              math.radians(rng.normal(0, 3.0))])
+        if noisy:  # same sensor noise as step 8 on tilt and tilt rate
+            z = z + np.array(
+                [
+                    0.0,
+                    0.0,
+                    math.radians(rng.normal(0, 0.3)),
+                    math.radians(rng.normal(0, 3.0)),
+                ]
+            )
         cmd = max(-MAX_ACCEL, min(MAX_ACCEL, controller(z)))
 
         if delay_steps:
@@ -99,24 +104,33 @@ def simulate(controller, t_end=8.0, delay_steps=0, motor_lag=0.0, noisy=False, s
 
 print("open-loop poles :", np.round(np.sort_complex(np.linalg.eigvals(A)), 2))
 print("LQR gains K     :", np.round(K, 2), " (u = -K z)")
-print("closed-loop poles:", np.round(np.sort_complex(np.linalg.eigvals(A - B @ K.reshape(1, 4))), 2))
+print(
+    "closed-loop poles:",
+    np.round(np.sort_complex(np.linalg.eigvals(A - B @ K.reshape(1, 4))), 2),
+)
 print()
 
 # Test 1: ideal sensors and motors
 print("Ideal sensors and motors, 8 s run:")
-print(f"{'controller':10s} {'result':10s} {'max tilt after shove':>21s} {'final speed':>12s} {'final position':>15s}")
+print(
+    f"{'controller':10s} {'result':10s} {'max tilt after shove':>21s} {'final speed':>12s} {'final position':>15s}"
+)
 runs = {}
 for name, ctrl in (("PID", pid_controller), ("LQR", lqr_controller)):
     res, fell = simulate(ctrl)
     runs[name] = res
     worst = max(abs(a) for a, t in zip(res["tilt"], res["t"]) if t > 2.0)
-    print(f"{name:10s} {'stayed up' if fell is None else f'fell {fell:.2f}s':10s} "
-          f"{worst:18.2f} deg {res['v'][-1]:8.3f} m/s {res['x'][-1]:11.3f} m")
+    print(
+        f"{name:10s} {'stayed up' if fell is None else f'fell {fell:.2f}s':10s} "
+        f"{worst:18.2f} deg {res['v'][-1]:8.3f} m/s {res['x'][-1]:11.3f} m"
+    )
 print()
 
 # Test 2: noise, 15 ms delay and 30 ms motor lag (the step 8 conditions), 20 noise seeds
 print("With noise, 15 ms delay and 30 ms motor lag, 20 random seeds:")
-print(f"{'controller':10s} {'stayed up':>10s} {'mean |final speed|':>20s} {'mean |final position|':>23s}")
+print(
+    f"{'controller':10s} {'stayed up':>10s} {'mean |final speed|':>20s} {'mean |final position|':>23s}"
+)
 for name, ctrl in (("PID", pid_controller), ("LQR", lqr_controller)):
     ups, speeds, positions = 0, [], []
     for seed in range(1, 21):

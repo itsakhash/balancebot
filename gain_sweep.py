@@ -1,7 +1,9 @@
 """Step 7: change one PID gain at a time and watch how the balance changes."""
+
 import math
 
 import matplotlib
+
 matplotlib.use("Agg")  # draw to a file, no window needed
 import matplotlib.pyplot as plt
 
@@ -20,7 +22,7 @@ def simulate(kp, ki, kd):
     times, angles = [], []
     t = 0.0
     while t < T_END:
-        if abs(t - 2.0) < DT / 2:          # the same shove at t = 2 s
+        if abs(t - 2.0) < DT / 2:  # the same shove at t = 2 s
             omega += math.radians(40.0)
 
         integral += (-theta) * DT
@@ -42,12 +44,12 @@ def simulate(kp, ki, kd):
 
 # name, kp, ki, kd  (only one thing differs from the baseline in each row)
 CASES = [
-    ("baseline",         30.0, 0.0, 1.5),
-    ("kp too low (8)",    8.0, 0.0, 1.5),
+    ("baseline", 30.0, 0.0, 1.5),
+    ("kp too low (8)", 8.0, 0.0, 1.5),
     ("no damping (kd=0)", 30.0, 0.0, 0.0),
-    ("kd too high (8)",  30.0, 0.0, 8.0),
+    ("kd too high (8)", 30.0, 0.0, 8.0),
     ("kp very high (200)", 200.0, 0.0, 4.0),
-    ("with ki (40)",     30.0, 40.0, 1.5),
+    ("with ki (40)", 30.0, 40.0, 1.5),
 ]
 
 fig, axes = plt.subplots(len(CASES), 1, sharex=True, figsize=(7, 10))

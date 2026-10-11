@@ -1,18 +1,20 @@
 """Step 2: an inverted pendulum with NO controller. It should fall over."""
+
 import math
 
 import matplotlib
+
 matplotlib.use("Agg")  # draw to a file, no window needed
 import matplotlib.pyplot as plt
 
-G = 9.81      # gravity, m/s^2
-L = 0.10      # height of the robot's center of mass above the axle, m
-DT = 0.005    # time step, s (200 Hz, the loop rate we will use on the Nucleo)
-T_END = 1.5   # how long to simulate, s
+G = 9.81  # gravity, m/s^2
+L = 0.10  # height of the robot's center of mass above the axle, m
+DT = 0.005  # time step, s (200 Hz, the loop rate we will use on the Nucleo)
+T_END = 1.5  # how long to simulate, s
 
-theta = math.radians(3.0)   # start leaning 3 degrees forward
-omega = 0.0                 # angular velocity, rad/s
-accel = 0.0                 # wheel acceleration (the control input), m/s^2: zero for now
+theta = math.radians(3.0)  # start leaning 3 degrees forward
+omega = 0.0  # angular velocity, rad/s
+accel = 0.0  # wheel acceleration (the control input), m/s^2: zero for now
 
 times, angles = [], []
 fell_at = None
