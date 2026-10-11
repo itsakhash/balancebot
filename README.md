@@ -2,7 +2,7 @@
 
 A self-balancing two-wheeled robot, built on an STM32 NUCLEO-F446RE and an MPU-6050 IMU.
 
-**Status:** the simulation (control and tilt estimation) is done. The firmware builds, but nothing has run on hardware yet; the parts are on order.
+**Status:** the simulation is done, the tilt estimator runs on real hardware, and the motor, encoder and balance-loop firmware is written and host-tested. The motors and the rest of the drivetrain parts are on order, so nothing that drives a motor has run yet. A parametric chassis is designed and ready to print.
 
 ## Simulation: the balancing problem first
 
@@ -22,8 +22,9 @@ The simulation steps at 200 Hz (5 ms), the loop rate planned for the Nucleo. Whe
 | `noisy_sweep.py` | Adds sensor noise, a 15 ms control delay and 30 ms motor lag. |
 | `complementary_filter.py` | Estimates tilt from a noisy accelerometer and a drifting gyro. |
 | `lqr_balance.py` | Full state feedback (LQR) that also removes the PID loop's drift. |
+| `design_gains.py` | Recomputes the LQR gains for a given center-of-mass height and tests them with the measured sensor noise, encoder quantization and a latency sweep. Tested by `test_design_gains.py`. |
 
-Run any of them with `python3 <script>.py` (needs Python 3, numpy and matplotlib). Each saves a PNG next to the script.
+Run any of them with `python3 <script>.py` (needs Python 3, numpy and matplotlib; `design_gains.py` needs only numpy). Each plotting script saves a PNG next to the script.
 
 ## PID control results
 
@@ -84,6 +85,28 @@ With noise on tilt and tilt rate, a 15 ms delay and 30 ms motor lag, over 20 noi
 
 LQR trades speed for calm: tilt recovers over a couple of seconds instead of about half a second, because it also works to bring the position back. The `Q` and `R` weights are one reasonable choice out of four I tried, not an optimum.
 
+### With the measured sensor noise, and what limits the design
+
+`design_gains.py` repeats the study with the noise measured on the real MPU-6050 (0.003 g accelerometer, 0.35 deg/s gyro) fed through the same complementary filter, encoder quantization (one count is 0.218 mm of wheel travel) and speed filter that the firmware uses. 20 noise seeds, a 3 degree lean, a 40 deg/s shove at 2 s, 15 ms delay, 30 ms motor lag, centre of mass 62 mm above the axle:
+
+| Controller | Stayed up | Mean max tilt after shove | Final speed | Final position |
+|---|---|---|---|---|
+| PID | 20/20 | 7.70 deg | 0.256 m/s | 0.637 m |
+| LQR | 20/20 | 1.98 deg | 0.001 m/s | 0.002 m |
+
+Two findings that shape the hardware:
+
+- **The gains barely depend on the center-of-mass height.** The tilt gain changes by about 6 percent between L = 50 mm and L = 150 mm, and the original gains stay upright across that whole range, so a taller or shorter chassis does not force a redesign.
+- **Latency is what limits it.** Runs that stayed up out of 10, LQR / PID, by delay from sensor to wheel command and motor lag:
+
+| Motor lag | 0 ms | 10 ms | 20 ms | 25 ms | 30 ms |
+|---|---|---|---|---|---|
+| 10 ms | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 |
+| 30 ms | 10/10 | 10/10 | 10/0 | 10/0 | 0/0 |
+| 50 ms | 10/10 | 10/0 | 0/0 | 0/0 | 0/0 |
+
+The columns are the sensor-to-command delay. Past a threshold the robot falls in every run, and PID has much less margin than LQR. The wheel acceleration limit matters less: LQR stays up down to 1 m/s^2 and falls at 0.75. The real delay and motor lag are not measured yet, so these tables say how much latency the design can tolerate, not how much the hardware has.
+
 ## Tilt estimation results
 
 The controller needs a tilt angle, and the IMU gives two imperfect measurements of it. `complementary_filter.py` fakes both sensors with the faults real ones have, then compares each estimate with the true tilt over a 10 s run with four shoves:
@@ -106,27 +129,61 @@ The controller needs a tilt angle, and the IMU gives two imperfect measurements 
 
 `a = 0.98` at 200 Hz is a time constant of 245 ms. A higher `a` rejects the wheel-acceleration errors better but lets gyro drift build up, and a lower one does the reverse, so the final value will be chosen on real sensor data.
 
-## Firmware (in progress)
+## Results on hardware: the tilt estimator
 
-`firmware/` is a PlatformIO project (STM32Cube HAL) for the NUCLEO-F446RE.
+The complementary filter is ported to C (`tilt.c`, 10 host checks) and runs at 200 Hz on the Nucleo with a gyro calibration over the first second (200 samples). Measured on the real MPU-6050, sitting still:
 
-- `src/mpu6050.c` is a minimal I2C driver: it wakes the sensor, sets a +/-500 deg/s gyro range, a +/-2 g accelerometer range and a 44 Hz low-pass filter, and reads all axes in one 14-byte burst.
-- `src/main.c` reads the sensor every 100 ms and prints the raw values over the ST-Link USB serial port at 115200 baud.
-- Wiring: MPU-6050 SCL to PB8 (D15), SDA to PB9 (D14), VCC to 3.3 V, GND to GND.
+- Gyro-Y resting offset: about +1.2 deg/s, removed by the startup calibration.
+- Noise: about 0.003 g on the accelerometer and 0.3 to 0.4 deg/s on the gyro, quieter than the 0.01 g and 0.5 deg/s the early simulation assumed. The simulation above now uses the measured values.
+- The accelerometer total magnitude reads 1.17 to 1.22 g instead of 1.00 g, an offset and scale error that will be trimmed at the balance point rather than calibrated separately.
 
-**Status:** it builds cleanly (about 8 KB of flash). It has not been run on hardware yet.
+## Firmware
+
+`firmware/` is a PlatformIO project (STM32Cube HAL) for the NUCLEO-F446RE, built as three programs from one source tree:
+
+| Environment | Program | Purpose |
+|---|---|---|
+| `nucleo_f446re` | `main.c` | Tilt estimator: reads the IMU, calibrates the gyro, prints angle and accelerometer angle at 10 lines/s. Runs on hardware. |
+| `motor_bench` | `motor_bench.c` | Bench test for the motors and encoders: counts per wheel turn by hand, then each motor forward and reverse with RPM readout. |
+| `balance` | `balance_main.c` | The balance loop at 200 Hz. Starts in a dry-run mode where the motor driver stays in standby, so the commands can be inspected by tilting the board by hand. |
+
+Build one with `pio run -e <environment>`. Wiring: MPU-6050 SCL to PB8 (D15), SDA to PB9 (D14), VCC to 3.3 V, GND to GND. The motor driver and encoder pin map is documented in `include/board_config.h`.
+
+The logic is kept free of hardware access and tested on the PC with plain `gcc`:
+
+| Module | What it does | Host test |
+|---|---|---|
+| `mpu6050.c` | Minimal I2C driver: +/-500 deg/s gyro, +/-2 g accelerometer, 44 Hz low-pass, one 14-byte burst read. | on hardware |
+| `tilt.c` | Complementary filter and gyro calibration. | `test_tilt.c`, 10 checks |
+| `drive_math.c` | Command to motor pins and PWM duty, encoder wraparound deltas, speed in RPM. | `test_drive_math.c`, 23 checks |
+| `controller.c` | PID and LQR, ported from the simulation. | `test_controller.c`, 30 checks, including a replay of the pendulum simulation compared with the Python output |
+| `balance.c` | Arming (held upright and still for 1 s), a cut-off past 35 degrees, balance-point trim, speed filter, and the controller call. | `test_balance.c`, 28 checks, including the supervisor balancing the simulated pendulum |
+| `drivetrain.c` | PWM on TIM1 and quadrature decoding on TIM2 and TIM3. | hardware only |
+
+Run a test from `firmware/`, for example:
+
+    gcc -Wall -Wextra -Iinclude test/test_balance.c src/balance.c src/controller.c -o /tmp/test_balance -lm && /tmp/test_balance
+
+Status: all three programs build. The tilt estimator has run on hardware. The motor bench and the balance loop have not run on hardware yet (the dry run needs only the Nucleo and the IMU, the rest needs the motors).
+
+## Chassis
+
+`chassis/` holds a parametric OpenSCAD model (`balancebot_chassis.scad`), ready-to-slice STLs and a README. It is a three-deck frame for 3D printing in PLA: the base deck clamps the two motors and carries the IMU on the axle line, the middle deck holds the Nucleo, and the top deck holds the battery and perfboard, which raises the center of mass. Four outrigger legs limit tilt to about 20 degrees for the first runs, and a test stand holds the wheels clear of the table.
+
+OpenSCAD checks confirm that no printed part overlaps another or the stand-ins for the motors, wheels, Nucleo, battery, perfboard, IMU and driver. All dimensions are nominal until the parts are measured, and a one-hour fit-test coupon is printed first. The design brief and print plan are in the chassis README.
 
 ## Limitations
 
-- The sensor noise, the gyro drift, the 15 ms delay and the 30 ms motor lag are assumptions, not measurements. They will be replaced with real numbers from the hardware.
-- The model is a point-mass pendulum with no wheel inertia, friction or motor dynamics, and it takes wheel acceleration as the input. Real motors take a voltage, so the LQR gains must be re-derived from the measured chassis and motor parameters.
-- The LQR assumes position and speed are measured cleanly, which the wheel encoders should provide; only tilt and tilt rate get sensor noise in the simulation.
-- The tilt filter is evaluated offline on recorded motion; it is not yet in the control loop.
+- The 15 ms delay and 30 ms motor lag are assumptions, not measurements, and the latency study above shows the design is sensitive to them. The sensor noise and gyro offset are measured. The gyro drift over a long run is not.
+- The model is a point-mass pendulum with no wheel inertia, friction or motor dynamics, and it takes wheel acceleration as the input. Real motors take a voltage. The mapping from commanded acceleration to motor command in the firmware is a placeholder (full command equals 5 m/s^2) until it is measured on the bench.
+- The center-of-mass height is an estimate (about 60 mm) until the finished robot is weighed and balanced.
+- The LQR assumes position and speed come from the wheel encoders; speed is a filtered difference of coarse encoder counts, which the study above includes.
+- Horizontal acceleration of the robot corrupts the accelerometer tilt. The simulation includes this effect in the filter study, but the effect on the real robot is untested.
 
 ## Next
 
-1. Run the firmware on the Nucleo: blink, then read and calibrate the MPU-6050.
-2. Port the complementary filter to C and compare its output with the simulation.
-3. Drive the motors and read the encoders.
-4. Build the chassis, measure its real parameters, and re-derive the LQR gains.
-5. Run the real controller at 200 Hz, and measure the real delay and noise against this simulation.
+1. Run the balance dry run on the Nucleo and the IMU, and check the arming and cut-off behavior by hand.
+2. Print the fit-test coupon, then the chassis; measure the real parts and update the model.
+3. Run `motor_bench` on the bench supply: counts per wheel turn, direction flags, and the real motor lag from a step response.
+4. Weigh the finished robot, find its center of mass, and rerun `design_gains.py` with the measured height.
+5. Run the balance loop live on the stand, then on the floor with the outrigger legs, and measure the real delay and noise against the simulation.
