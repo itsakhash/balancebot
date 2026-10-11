@@ -19,7 +19,15 @@
 #include "tilt.h"
 
 #define DRY_RUN 1
-#define USE_LQR 1 /* 1 = LQR, 0 = PID */
+#define USE_LQR 1 /* 1 = LQR, 0 = PID. Use 0 for tests with the wheels in the air:      \
+                   * the LQR also feeds back wheel position and speed, which in the air \
+                   * has no body to push back and makes the wheels run away. */
+
+/* Bring-up settings. Change one at a time, as the bring-up guide says. */
+#define BAL_TILT_SIGN 1.0f /* -1.0f if leaning toward the robot's front reads as a negative angle */
+#define BAL_TRIM_DEG 0.0f  /* the raw angle reading where the robot balances on its wheels */
+#define BAL_CUT_DEG 35.0f  /* motors cut past this tilt. With the outrigger legs fitted (they touch \
+                            * at about 20 degrees) use about 15, or the cut never fires. */
 
 #define LED_PORT GPIOA
 #define LED_PIN GPIO_PIN_5
@@ -152,6 +160,9 @@ int main(void)
 
     balance_t bal;
     balance_init(&bal, USE_LQR);
+    bal.tilt_sign = BAL_TILT_SIGN;
+    bal.trim_deg = BAL_TRIM_DEG;
+    bal.cut_deg = BAL_CUT_DEG;
     print("Hold the robot upright and still for 1 s to arm.\r\n");
 
     uint32_t next_tick = HAL_GetTick() + LOOP_MS;
