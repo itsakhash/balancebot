@@ -2,7 +2,7 @@
 
 A self-balancing two-wheeled robot, built on an STM32 NUCLEO-F446RE and an MPU-6050 IMU.
 
-**Status:** the simulation is done, and the tilt estimator and the balance loop (in dry-run mode, motors off) run on real hardware. The motor and encoder firmware is written and host-tested. The motors and the rest of the drivetrain parts are on order, so nothing that drives a motor has run yet. A parametric chassis is designed and ready to print.
+**Status:** the simulation is done, and the tilt estimator and the balance loop (in dry-run mode, motors off) run on real hardware, including a FreeRTOS version of the loop with measured timing. The motor and encoder firmware is written and host-tested. The motors and the rest of the drivetrain parts are on order, so nothing that drives a motor has run yet. A parametric chassis is designed and ready to print.
 
 ## Simulation: the balancing problem first
 
@@ -147,11 +147,25 @@ With only the Nucleo and the IMU connected (the motor driver held in standby), t
 - **Saturation:** the command reaches +/-100 percent at leans beyond about 10 degrees or when rotating the board quickly.
 - **Cut-off and re-arm:** three deliberate tips past 35 degrees dropped the state to `OFF` and counted `falls=1, 2, 3`; each time, holding the board level and still for a second brought it back to `RUN`.
 
-This verifies the logic against real sensor data. It says nothing yet about the motors, the encoders or the latency of the real loop.
+This verifies the logic against real sensor data. It says nothing yet about the motors or the encoders. The loop timing is measured in the next section.
+
+## Results on hardware: the balance loop on FreeRTOS
+
+The same loop is also built as FreeRTOS tasks (`balance_rtos`, FreeRTOS 10.6.2, Cortex-M3 port because the project builds with software floating point). The balance task runs every 5 ms from `xTaskDelayUntil`; a supervisor task feeds a hardware watchdog only while the balance task keeps counting, and cuts the motors if it stops; a logger task does all the printing, so slow serial output cannot delay the control loop. The balance task times itself with the CPU cycle counter (DWT), and the statistics code is host-tested (`timing_stats.c`, 26 checks). Still the dry run, motors off. Measured on the board in one-second windows:
+
+| Measurement | Result |
+|---|---|
+| Loop period (start to start) | 5000 / 5000 / 5000 us (min / mean / max) in every window logged, so no jitter at 1 us resolution |
+| Late or missed passes | 0 and 0 |
+| Time from loop start to motor command | 1.82 to 1.87 ms (about 37 percent of the 5 ms budget), with software floating point and a 100 kHz I2C read |
+| Stack headroom (words free) | 262 of 384 (balance), 92 of 128 (supervisor), 316 of 512 (logger) |
+| Build size | 19.4 percent RAM (mostly the 24 KB FreeRTOS heap), 3.9 percent flash |
+
+The arming and command behaviour matched the non-RTOS version. The 1.8 ms is part of the sensor-to-wheel delay that the latency study above shows the design is sensitive to; the 44 Hz IMU low-pass filter adds more, so the full delay is still unmeasured. The watchdog and the stack-overflow and hard-fault handlers cut the motors by design, but I have not yet forced those faults to test them. The jitter figure is for the loop running alone, with no motors or encoders yet.
 
 ## Firmware
 
-`firmware/` is a PlatformIO project (STM32Cube HAL) for the NUCLEO-F446RE, built as four programs from one source tree:
+`firmware/` is a PlatformIO project (STM32Cube HAL) for the NUCLEO-F446RE, built as five programs from one source tree:
 
 | Environment | Program | Purpose |
 |---|---|---|
@@ -159,6 +173,7 @@ This verifies the logic against real sensor data. It says nothing yet about the 
 | `motor_bench` | `motor_bench.c` | Bench test for the motors and encoders: counts per wheel turn by hand, then each motor forward and reverse with RPM readout. |
 | `motor_step` | `step_test.c` | Motor step response: steps each motor to five commands and records the encoder every 5 ms, then prints the speed reached, the dead time and lag time constant, a speed-versus-command line, and the numbers for the motor model. Wheels off the ground. |
 | `balance` | `balance_main.c` | The balance loop at 200 Hz. Starts in a dry-run mode where the motor driver stays in standby, so the commands can be inspected by tilting the board by hand. Runs on hardware in dry-run mode. |
+| `balance_rtos` | `balance_rtos_main.c` | The same loop as FreeRTOS tasks (balance, supervisor with hardware watchdog, logger), with the loop period, run time and stack use measured on the board. Needs the FreeRTOS library in `lib/FreeRTOS` and `include/FreeRTOSConfig.h`. Runs on hardware in dry-run mode. |
 
 Build one with `pio run -e <environment>`. Wiring: MPU-6050 SCL to PB8 (D15), SDA to PB9 (D14), VCC to 3.3 V, GND to GND. The motor driver and encoder pin map is documented in `include/board_config.h`.
 
@@ -172,13 +187,14 @@ The logic is kept free of hardware access and tested on the PC with plain `gcc`:
 | `controller.c` | PID and LQR, ported from the simulation. | `test_controller.c`, 30 checks, including a replay of the pendulum simulation compared with the Python output |
 | `balance.c` | Arming (held upright and still for 1 s), a cut-off past 35 degrees, balance-point trim, speed filter, and the controller call. | `test_balance.c`, 28 checks, including the supervisor balancing the simulated pendulum |
 | `step_fit.c` | Fits dead time and lag to a motor step response, fits a line through speed versus command, and turns a wanted wheel acceleration into a motor command from the fitted model. | `test_step_fit.c`, 31 checks |
+| `timing_stats.c` | Loop-timing windows (period min, mean and max, run time, late passes) and cycle-count to microsecond conversion, used by the RTOS program. | `test_timing_stats.c`, 26 checks |
 | `drivetrain.c` | PWM on TIM1 and quadrature decoding on TIM2 and TIM3. | hardware only |
 
 Run a test from `firmware/`, for example:
 
     gcc -Wall -Wextra -Iinclude test/test_balance.c src/balance.c src/controller.c -o /tmp/test_balance -lm && /tmp/test_balance
 
-Status: all four programs build. The tilt estimator and the balance loop's dry run have run on hardware. The motor bench, the motor step test and the balance loop with live motors have not (they need the motors).
+Status: all five programs build. The tilt estimator, the balance loop's dry run and its FreeRTOS version have run on hardware. The motor bench, the motor step test and the balance loop with live motors have not (they need the motors).
 
 ## Chassis
 
@@ -199,4 +215,5 @@ OpenSCAD checks confirm that no printed part overlaps another or the stand-ins f
 1. Print the fit-test coupon, then the chassis; measure the real parts and update the model.
 2. Run `motor_bench` on the bench supply (counts per wheel turn, direction flags), then `motor_step` for the real motor lag and speed per command, and replace the placeholder acceleration-to-command mapping with the fitted motor model.
 3. Weigh the finished robot, find its center of mass, and rerun `design_gains.py` with the measured height.
-4. Run the balance loop live on the stand, then on the floor with the outrigger legs, and measure the real delay and noise against the simulation.
+4. Rerun the FreeRTOS timing with the motors and encoders running, and compare software and hard floating point.
+5. Run the balance loop live on the stand, then on the floor with the outrigger legs, and measure the real delay and noise against the simulation.
