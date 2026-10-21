@@ -7,22 +7,23 @@
 //   part = assembly | exploded | coupon | base_deck | mid_deck | top_deck | rail_front | rail_back
 //          | cradle_cap | leg | stand | interference
 //
-// EVERY NUMBER IN THE FIRST BLOCK IS NOMINAL. Measure the real parts with calipers and
-// change them here; everything else follows.
+// Numbers marked "measured" in the first block come from calipers on the real parts
+// (2026-10-21). Numbers marked NOMINAL (wheel width, battery holder, perfboard, switch)
+// are still to be measured. Change them here; everything else follows.
 
 $fn = 64;
 
 // ---- sizes of the purchased parts (NOMINAL: measure and update) -----------
-motor_dia   = 25;      // JGA25-370 body diameter
-motor_len   = 60;      // gearmotor + gearbox length along the axle (encoder board may add more)
+motor_dia   = 24.84;   // measured: JGA25-370 body and gearbox diameter
+motor_len   = 57.6;    // measured: back of the encoder cylinder to the gearbox face (shaft, ring and hub not included)
 motor_gap   = 10;      // space between the two motors' inner ends
-wheel_dia   = 65;
-wheel_w     = 27;      // wheel width
+wheel_dia   = 68.84;   // measured: outer diameter including the tire
+wheel_w     = 27;      // NOMINAL wheel width (measure)
 wheel_clear = 3;       // gap between motor end and wheel
-nucleo      = [82.5, 70];   // X (long side), Y
-imu         = [20, 16];     // GY-521 footprint; rotate with imu_rot if its Y arrow is on the long side
+nucleo      = [82.44, 69.85];   // measured: X (long side), Y
+imu         = [20.23, 15.7]; // measured GY-521 footprint; rotate with imu_rot if its Y arrow is on the long side
 imu_rot     = 0;            // 0 or 90
-driver      = [20, 20];     // TB6612 module
+driver      = [21.16, 18.1]; // measured TB6612 module
 perfboard   = [70, 50];
 battery     = [80, 40, 20]; // 2S 18650 holder with protection board
 switch_cut  = [13, 19];     // rocker switch panel cut-out (Y, Z): match your switch
@@ -33,7 +34,7 @@ pocket_clear = 0.3;
 deck_t      = 4;
 rail_t      = 4;
 deck_x      = 96;                    // inner distance between the two rails
-deck_y      = 2*(motor_gap/2 + motor_len);   // 130
+deck_y      = 2*(motor_gap/2 + motor_len);   // 125.2 with the measured motor_len
 deck_z      = [-20.5, 70, 140];      // bottom of each deck, above the axle
 tab_w       = 30;                    // deck tabs that go through the rail slots
 tab_y       = 35;
@@ -44,19 +45,21 @@ tilt_limit  = 20;                    // outrigger legs touch the floor at this t
 leg_reach   = 40;                    // how far the legs stick out of the rails
 leg_w       = 30;
 leg_h       = 28;
+leg_y       = 47;                    // leg centres at +/- leg_y along the rail
 // ---- derived ---------------------------------------------------------------
 motor_r     = motor_dia/2;
-bore_d      = motor_dia + 0.3;
+clamp_gap   = 0.4;           // the cap stops this far above the block, so tightening the screws squeezes the motor
+bore_d      = motor_dia + 0.1;
 screw_x     = motor_r + 0.15 + 4.5;      // clamp screw offset from motor axis
 cradle_x    = screw_x + 4.5;             // half width of a cradle block
 cradle_w    = 10;
 cap_top     = motor_r + 4;
-cradle_y    = [for (s=[-1,1]) each [s*(motor_gap/2+12), s*(motor_gap/2+48)]];
+cradle_y    = [for (s=[-1,1]) each [s*(motor_gap/2+16), s*(motor_gap/2+48)]];   // first clamp sits 16 mm from the rear, clear of the encoder board
 wheel_y     = motor_gap/2 + motor_len + wheel_clear + wheel_w/2;
 rail_x      = deck_x/2;                  // inner face of the rails
 leg_x0      = rail_x + rail_t;
 leg_z       = (leg_x0 + leg_reach) * tan(tilt_limit) - wheel_dia/2;   // arm underside
-stand_h     = 36;
+stand_h     = 38;
 stand_floor = rail_bot - stand_h;
 
 module hexpocket(h=2.6) { cylinder(d=6.4, h=h, $fn=6); }
@@ -169,7 +172,7 @@ module rail(back=false) {
     for (i=[0:1])
       translate([-1, -35, deck_z[i] + deck_t + win_pad]) cube([rail_t + 2, 70, deck_z[i+1] - deck_z[i] - deck_t - 2*win_pad]);
     // M3 holes for the outrigger legs
-    for (ys=[-50, 50], dz=[8, 20])
+    for (ys=[-leg_y, leg_y], dz=[8, 20])
       translate([-1, ys, leg_z + dz]) rotate([0, 90, 0]) cylinder(d=3 + 2*hole_clear, h=rail_t + 2);
     // rocker switch cut-out and a fuse-holder tie slot, back rail only
     if (back) {
@@ -181,9 +184,9 @@ module rail(back=false) {
 }
 
 // ---- cradle cap, leg, stand ------------------------------------------------
-module cradle_cap() {   // modelled in place: yc = 0
+module cradle_cap() {   // modelled in place: yc = 0; its flat face sits clamp_gap above the split plane
   difference() {
-    translate([-cradle_x, -cradle_w/2, 0]) cube([2*cradle_x, cradle_w, cap_top]);
+    translate([-cradle_x, -cradle_w/2, clamp_gap]) cube([2*cradle_x, cradle_w, cap_top - clamp_gap]);
     rotate([90, 0, 0]) cylinder(d=bore_d, h=cradle_w + 2, center=true);
     for (sx=[-1,1]) translate([sx*screw_x, 0, -1]) cylinder(d=3 + 2*hole_clear, h=cap_top + 2);
   }
@@ -235,7 +238,7 @@ module printed_parts(explode=0) {
   color("khaki") translate([rail_x, 0, 0]) translate([explode, 0, 0]) rail(false);
   color("khaki") translate([-rail_x, 0, 0]) translate([-explode, 0, 0]) mirror([1, 0, 0]) rail(true);
   color("orange") for (yc = cradle_y) translate([0, yc, explode*0.6]) cradle_cap();
-  color("tomato") for (sx=[-1,1], sy=[-50, 50]) translate([sx > 0 ? leg_x0 : -leg_x0, sy - leg_w/2, leg_z]) mirror([sx > 0 ? 0 : 1, 0, 0]) leg();
+  color("tomato") for (sx=[-1,1], sy=[-leg_y, leg_y]) translate([sx > 0 ? leg_x0 : -leg_x0, sy - leg_w/2, leg_z]) mirror([sx > 0 ? 0 : 1, 0, 0]) leg();
 }
 
 // ---- part selector ---------------------------------------------------------
@@ -266,14 +269,14 @@ else if (part == "interference_parts") {   // printed part against printed part:
   union() {
     intersection() { union() { base_deck(); mid_deck(); top_deck(); }
                      union() { translate([rail_x, 0, 0]) rail(false); translate([-rail_x, 0, 0]) mirror([1, 0, 0]) rail(true); } }
-    intersection() { for (sx=[-1,1], sy=[-50, 50]) translate([sx > 0 ? leg_x0 : -leg_x0, sy - leg_w/2, leg_z]) mirror([sx > 0 ? 0 : 1, 0, 0]) leg();
+    intersection() { for (sx=[-1,1], sy=[-leg_y, leg_y]) translate([sx > 0 ? leg_x0 : -leg_x0, sy - leg_w/2, leg_z]) mirror([sx > 0 ? 0 : 1, 0, 0]) leg();
                      union() { translate([rail_x, 0, 0]) rail(false); translate([-rail_x, 0, 0]) mirror([1, 0, 0]) rail(true); } }
     intersection() { stand(); union() { translate([rail_x, 0, 0]) rail(false); translate([-rail_x, 0, 0]) mirror([1, 0, 0]) rail(true); } }
   }
 }
 else if (part == "interference_legs_stand") {   // legs and stand against the wheels and motors: should be empty
   intersection() {
-    union() { stand(); for (sx=[-1,1], sy=[-50, 50]) translate([sx > 0 ? leg_x0 : -leg_x0, sy - leg_w/2, leg_z]) mirror([sx > 0 ? 0 : 1, 0, 0]) leg(); }
+    union() { stand(); for (sx=[-1,1], sy=[-leg_y, leg_y]) translate([sx > 0 ? leg_x0 : -leg_x0, sy - leg_w/2, leg_z]) mirror([sx > 0 ? 0 : 1, 0, 0]) leg(); }
     ghosts(0.05);
   }
 }
