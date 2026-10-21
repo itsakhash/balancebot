@@ -4,7 +4,6 @@
 #define PI_F 3.14159265f
 
 static float absf(float x) { return x < 0.0f ? -x : x; }
-
 void balance_init(balance_t *b, int use_lqr)
 {
     b->use_lqr = use_lqr;
