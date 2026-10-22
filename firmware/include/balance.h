@@ -8,12 +8,12 @@
 /* The balance supervisor: arming, tip-over cutoff, and the controller call.
  * Pure C with no hardware access, so it is tested on the PC (test/test_balance.c). */
 
-#define BALANCE_WHEEL_DIAMETER_M 0.065f
-#define BALANCE_ARM_WINDOW_DEG 3.0f /* must be this close to upright to arm...        */
-#define BALANCE_ARM_RATE_DPS 30.0f  /* ...and rotating slower than this               */
-#define BALANCE_ARM_HOLD_S 1.0f     /* ...for this long                               */
-#define BALANCE_CUT_DEG 35.0f       /* past this the motors are cut                   */
-#define BALANCE_SPEED_LP 0.2f       /* speed filter: fraction of new data per step    */
+#define BALANCE_WHEEL_DIAMETER_M 0.06884f /* measured with calipers, tire included    */
+#define BALANCE_ARM_WINDOW_DEG 3.0f       /* must be this close to upright to arm...        */
+#define BALANCE_ARM_RATE_DPS 30.0f        /* ...and rotating slower than this               */
+#define BALANCE_ARM_HOLD_S 1.0f           /* ...for this long                               */
+#define BALANCE_CUT_DEG 35.0f             /* past this the motors are cut                   */
+#define BALANCE_SPEED_LP 0.2f             /* speed filter: fraction of new data per step    */
 
 typedef enum
 {
