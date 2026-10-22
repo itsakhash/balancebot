@@ -36,10 +36,12 @@
 
 /* Flip these if the bench test shows a wheel turning (or counting) backward.
  * The two motors are mounted as mirror images, so one side usually needs it.
- * Encoders are set from the bench test: left counted backward turning
- * counter-clockwise and right counted backward turning clockwise. */
-#define MOTOR_LEFT_INVERT 0
-#define MOTOR_RIGHT_INVERT 1
+ * Encoders are set from the hand test: left counted backward turning
+ * counter-clockwise and right counted backward turning clockwise.
+ * Motors are set from the powered bench test: with the encoder flags above,
+ * a forward command made both counts go negative, so both motor flags flip. */
+#define MOTOR_LEFT_INVERT 1
+#define MOTOR_RIGHT_INVERT 0
 #define ENCODER_LEFT_INVERT 1
 #define ENCODER_RIGHT_INVERT 0
 
