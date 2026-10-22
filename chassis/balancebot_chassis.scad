@@ -21,12 +21,15 @@ wheel_dia   = 68.84;   // measured: outer diameter including the tire
 wheel_w     = 27;      // NOMINAL wheel width (measure)
 wheel_clear = 3;       // gap between motor end and wheel
 nucleo      = [82.44, 69.85];   // measured: X (long side), Y
-imu         = [20.23, 15.7]; // measured GY-521 footprint; rotate with imu_rot if its Y arrow is on the long side
-imu_rot     = 0;            // 0 or 90
+breadboard  = [82, 54, 9];   // from the listing drawing (82 x 54 x 9 mm half-size board): measure to confirm
+imu         = [20.23, 15.7]; // measured GY-521 footprint (plugs into the breadboard; used by no printed part)
+imu_rot     = 0;            // kept for the assembly view only
 driver      = [21.16, 18.1]; // measured TB6612 module
 perfboard   = [70, 50];
-battery     = [80, 40, 20]; // 2S 18650 holder with protection board
-switch_cut  = [13, 19];     // rocker switch panel cut-out (Y, Z): match your switch
+battery     = [80, 42, 18.6]; // from the 2S1P holder listing (42 x 80 x 18.6 mm); measure when it arrives
+switch_d    = 20.2;         // round rocker switch, 20 mm body (listing): panel hole diameter
+switch_pocket_d = 23.5;     // recess on the inner face so the snap tabs catch on a thin web
+switch_web  = 1.8;          // panel thickness left at the switch hole
 // ---- printing tolerances ---------------------------------------------------
 hole_clear   = 0.2;
 pocket_clear = 0.3;
@@ -39,7 +42,7 @@ deck_z      = [-20.5, 70, 140];      // bottom of each deck, above the axle
 tab_w       = 30;                    // deck tabs that go through the rail slots
 tab_y       = 35;
 rail_bot    = deck_z[0] - 6;
-rail_top    = deck_z[2] + deck_t + 22;
+rail_top    = deck_z[2] + deck_t + 26;   // 26 above the top deck: room for the round rocker switch
 win_pad     = 3;                     // wiring-window margin above/below each deck
 tilt_limit  = 20;                    // outrigger legs touch the floor at this tilt
 leg_reach   = 40;                    // how far the legs stick out of the rails
@@ -61,8 +64,17 @@ leg_x0      = rail_x + rail_t;
 leg_z       = (leg_x0 + leg_reach) * tan(tilt_limit) - wheel_dia/2;   // arm underside
 stand_h     = 38;
 stand_floor = rail_bot - stand_h;
+// decks that carry the boards are longer than the rails and overhang them (they sit above the wheels)
+mid_y       = 156;        // mid deck length along Y
+nuc_y       = -39.5;      // Nucleo centre Y on the mid deck
+bb_y        = 45.6;       // breadboard centre Y on the mid deck
+top_y       = 134;        // top deck length along Y
+top_by      = 35;         // battery centre Y on the top deck
+top_py      = -38;        // perfboard centre Y on the top deck
+switch_y    = 0;          // rocker switch Y on the back rail (between the battery and the perfboard)
+switch_z    = deck_z[2] + deck_t + 13;
 
-module hexpocket(h=2.6) { cylinder(d=6.4, h=h, $fn=6); }
+module hexpocket(h=2.8) { cylinder(d=6.8, h=h, $fn=6); }   // M3 nut: 5.5 across flats, 6.35 across corners
 
 // one L-shaped corner locator for a board of size sz centred at the origin (sx, sy = which corner)
 module one_corner(sz, sx, sy, leg=8, t=2, h=3, c=pocket_clear) {
@@ -86,9 +98,9 @@ module tie_slots(sz, z0) {
 }
 
 // ---- decks -----------------------------------------------------------------
-module deck_blank(z0) {
+module deck_blank(z0, len=deck_y) {
   translate([0, 0, z0]) {
-    translate([-deck_x/2, -deck_y/2, 0]) cube([deck_x, deck_y, deck_t]);
+    translate([-deck_x/2, -len/2, 0]) cube([deck_x, len, deck_t]);
     for (sx=[-1,1], ty=[-tab_y, tab_y])
       translate([sx>0 ? deck_x/2 - 1 : -deck_x/2 - rail_t, ty - tab_w/2, 0]) cube([rail_t + 1, tab_w, deck_t]);
   }
@@ -107,47 +119,38 @@ module base_deck() {
     union() {
       deck_blank(deck_z[0]);
       for (yc = cradle_y) cradle_lower(yc);
-      // IMU on pillars, centred on the axle line, in front of the motors
-      translate([34, 0, deck_z[0] + deck_t]) rotate([0, 0, imu_rot]) {
-        pillars(imu, h=6, w=4);
-        corner_locators(imu, leg=5, t=1.6, h=8);
-      }
-      // motor driver behind the motors
-      translate([-34, 0, deck_z[0] + deck_t]) {
-        pillars(driver, h=3, w=4);
-        corner_locators(driver, leg=5, t=1.6, h=6);
-      }
     }
     // clamp screws through the plate, nut pockets in the underside
     for (yc = cradle_y, sx=[-1,1]) {
       translate([sx*screw_x, yc, deck_z[0] - 1]) cylinder(d=3 + 2*hole_clear, h=40);
-      translate([sx*screw_x, yc, deck_z[0] - 0.01]) hexpocket(2.6);
+      translate([sx*screw_x, yc, deck_z[0] - 0.01]) hexpocket();
     }
-    // zip-tie slots beside the IMU and the driver module
-    translate([34, 0, 0]) rotate([0, 0, imu_rot]) tie_slots(imu, deck_z[0]);
-    translate([-34, 0, 0]) tie_slots(driver, deck_z[0]);
   }
 }
 
 module mid_deck() {
   difference() {
     union() {
-      deck_blank(deck_z[1]);
-      translate([0, 0, deck_z[1] + deck_t]) {
+      deck_blank(deck_z[1], mid_y);
+      // Nucleo on pillars
+      translate([0, nuc_y, deck_z[1] + deck_t]) {
         pillars(nucleo, h=5, w=6);
         corner_locators(nucleo, leg=10, t=2, h=7);
       }
+      // breadboard (self-adhesive back) on a flat pad with corner locators; the IMU and the motor driver plug into it
+      translate([0, bb_y, deck_z[1] + deck_t]) corner_locators([breadboard[0], breadboard[1]], leg=10, t=2, h=4);
     }
-    tie_slots(nucleo, deck_z[1]);
+    // wire pass-through between the Nucleo and the breadboard (motor and encoder wires come up from the base deck here)
+    translate([-30, (nuc_y + nucleo[1]/2 + 2.3 + bb_y - breadboard[1]/2 - 2.3)/2 - 6, deck_z[1] - 1]) cube([60, 12, deck_t + 2]);
   }
 }
 
 module top_deck() {
-  by = 30;    // battery centre Y
-  py = -37;   // perfboard centre Y
+  by = top_by;    // battery centre Y
+  py = top_py;    // perfboard centre Y
   difference() {
     union() {
-      deck_blank(deck_z[2]);
+      deck_blank(deck_z[2], top_y);
       translate([0, by, deck_z[2] + deck_t]) corner_locators([battery[0], battery[1]], leg=12, t=2.4, h=10);
       translate([0, py, deck_z[2] + deck_t]) {
         pillars(perfboard, h=4, w=5);
@@ -174,11 +177,12 @@ module rail(back=false) {
     // M3 holes for the outrigger legs
     for (ys=[-leg_y, leg_y], dz=[8, 20])
       translate([-1, ys, leg_z + dz]) rotate([0, 90, 0]) cylinder(d=3 + 2*hole_clear, h=rail_t + 2);
-    // rocker switch cut-out and a fuse-holder tie slot, back rail only
+    // round rocker switch hole (recessed from the inner face) and fuse-holder tie slots, back rail only
     if (back) {
-      translate([-1, 40 - switch_cut[0]/2, deck_z[2] + deck_t + 11 - switch_cut[1]/2]) cube([rail_t + 2, switch_cut[0], switch_cut[1]]);
-      translate([-1, -50 - 1.3, deck_z[2] + deck_t + 11 - 4]) cube([rail_t + 2, 2.6, 8]);
-      translate([-1, -40 - 1.3, deck_z[2] + deck_t + 11 - 4]) cube([rail_t + 2, 2.6, 8]);
+      translate([-1, switch_y, switch_z]) rotate([0, 90, 0]) cylinder(d=switch_d, h=rail_t + 2);
+      translate([-1, switch_y, switch_z]) rotate([0, 90, 0]) cylinder(d=switch_pocket_d, h=1 + rail_t - switch_web);
+      translate([-1, -50 - 1.3, switch_z - 4]) cube([rail_t + 2, 2.6, 8]);
+      translate([-1, -40 - 1.3, switch_z - 4]) cube([rail_t + 2, 2.6, 8]);
     }
   }
 }
@@ -224,11 +228,12 @@ module stand() {
 module ghosts(e=0) {
   color("dimgray", 0.9) for (s=[-1,1]) translate([0, s*(motor_gap/2 + motor_len/2), 0]) rotate([90, 0, 0]) cylinder(d=motor_dia - 2*e, h=motor_len - 2*e, center=true);
   color("black", 0.9) for (s=[-1,1]) translate([0, s*wheel_y, 0]) rotate([90, 0, 0]) cylinder(d=wheel_dia - 2*e, h=wheel_w - 2*e, center=true);
-  color("seagreen", 0.9) translate([-nucleo[0]/2 + e, -nucleo[1]/2 + e, deck_z[1] + deck_t + 5 + e]) cube([nucleo[0] - 2*e, nucleo[1] - 2*e, 1.6 - 2*e]);
-  color("royalblue", 0.9) translate([-battery[0]/2 + e, 30 - battery[1]/2 + e, deck_z[2] + deck_t + e]) cube([battery[0] - 2*e, battery[1] - 2*e, battery[2] - 2*e]);
-  color("goldenrod", 0.9) translate([-perfboard[0]/2 + e, -37 - perfboard[1]/2 + e, deck_z[2] + deck_t + 4 + e]) cube([perfboard[0] - 2*e, perfboard[1] - 2*e, 1.6 - 2*e]);
-  color("purple", 0.9) translate([34, 0, deck_z[0] + deck_t + 6 + e]) rotate([0,0,imu_rot]) translate([-imu[0]/2 + e, -imu[1]/2 + e, 0]) cube([imu[0] - 2*e, imu[1] - 2*e, 1.6 - 2*e]);
-  color("red", 0.9) translate([-34, 0, deck_z[0] + deck_t + 3 + e]) translate([-driver[0]/2 + e, -driver[1]/2 + e, 0]) cube([driver[0] - 2*e, driver[1] - 2*e, 1.6 - 2*e]);
+  color("seagreen", 0.9) translate([-nucleo[0]/2 + e, nuc_y - nucleo[1]/2 + e, deck_z[1] + deck_t + 5 + e]) cube([nucleo[0] - 2*e, nucleo[1] - 2*e, 1.6 - 2*e]);
+  color("white", 0.9) translate([-breadboard[0]/2 + e, bb_y - breadboard[1]/2 + e, deck_z[1] + deck_t + e]) cube([breadboard[0] - 2*e, breadboard[1] - 2*e, breadboard[2] - 2*e]);
+  color("royalblue", 0.9) translate([-battery[0]/2 + e, top_by - battery[1]/2 + e, deck_z[2] + deck_t + e]) cube([battery[0] - 2*e, battery[1] - 2*e, battery[2] - 2*e]);
+  color("goldenrod", 0.9) translate([-perfboard[0]/2 + e, top_py - perfboard[1]/2 + e, deck_z[2] + deck_t + 4 + e]) cube([perfboard[0] - 2*e, perfboard[1] - 2*e, 1.6 - 2*e]);
+  // rocker switch body behind the back rail
+  color("black", 0.9) translate([-rail_x + e, switch_y, switch_z]) rotate([0, 90, 0]) cylinder(d=20 - 2*e, h=24 - 2*e);
 }
 
 module printed_parts(explode=0) {
@@ -281,7 +286,7 @@ else if (part == "interference_legs_stand") {   // legs and stand against the wh
   }
 }
 else if (part == "coupon") {
-  // one hour of plastic: a motor clamp, an IMU seat, a Nucleo corner and a nut pocket
+  // one hour of plastic: a motor clamp, a breadboard corner, a Nucleo corner and a nut pocket (on the underside)
   difference() {
     union() {
       cube([100, 60, deck_t]);
@@ -291,10 +296,10 @@ else if (part == "coupon") {
           translate([0, 0, motor_r + 4]) rotate([90, 0, 0]) cylinder(d=bore_d, h=cradle_w + 2, center=true);
         }
       }
-      translate([78, 40, deck_t]) rotate([0,0,imu_rot]) { pillars(imu, h=6, w=4); corner_locators(imu, leg=5, t=1.6, h=8); }
+      translate([70, 40, deck_t]) one_corner([breadboard[0], breadboard[1]], 1, 1, leg=10, t=2, h=4);
       translate([82 - nucleo[0]/2, 12 - nucleo[1]/2, deck_t]) one_corner(nucleo, 1, 1, leg=10, t=2, h=7);
     }
     for (sx=[-1,1]) translate([28 + sx*screw_x, 30, -1]) cylinder(d=3 + 2*hole_clear, h=40);
-    for (sx=[-1,1]) translate([28 + sx*screw_x, 30, -0.01]) hexpocket(2.6);
+    for (sx=[-1,1]) translate([28 + sx*screw_x, 30, -0.01]) hexpocket();
   }
 }
